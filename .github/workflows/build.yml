@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out with the chogan submodule
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Read Gradle version from the wrapper
+        id: gradleversion
+        run: |
+          set -euo pipefail
+          V=$(sed -n 's|.*/gradle-\([0-9][^-]*\)-bin\.zip.*|\1|p' android/gradle/wrapper/gradle-wrapper.properties)
+          [ -n "$V" ] || { echo "Could not read the Gradle version"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ steps.gradleversion.outputs.version }}
+
+      - name: Build
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      # Chogan's own files come from the submodule; a wrong path would build an
+      # app with no games, so the APK is asked what it really carries.
+      - name: Check APK contents, package and names
+        run: |
+          set -euo pipefail
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -n 1)
+          unzip -l "$APK" > /tmp/apk.txt
+          for f in assets/public/index.html assets/public/games.json assets/public/lib/chogan.js \
+                   assets/capacitor.config.json assets/capacitor.plugins.json; do
+            grep -q "$f" /tmp/apk.txt || { echo "Missing from the APK: $f"; exit 1; }
+          done
+          N=$(grep -c 'assets/public/games/[^/]*/index.html' /tmp/apk.txt)
+          [ "$N" -ge 40 ] || { echo "Only $N games in the APK"; exit 1; }
+          BADGE=$("$AAPT" dump badging "$APK")
+          PKG=$(echo "$BADGE" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          DEF=$(echo "$BADGE" | sed -n "s/^application-label:'\(.*\)'$/\1/p")
+          FA=$(echo "$BADGE" | sed -n "s/^application-label-fa:'\(.*\)'$/\1/p")
+          [ "$PKG" = "io.github.choganhq.choganplus.debug" ] || { echo "Package is $PKG"; exit 1; }
+          [ "$DEF" = "Chogan Plus" ] || { echo "Default name is \"$DEF\""; exit 1; }
+          [ "$FA" = "چوگان پلاس" ] || { echo "Persian name is \"$FA\""; exit 1; }
+          SC=$("$AAPT" dump xmltree --file res/xml/shortcuts.xml "$APK" | grep -c 'targetPackage.*"io.github.choganhq.chogan"' || true)
+          [ "$SC" = 0 ] || { echo "$SC shortcuts still open Chogan"; exit 1; }
+          echo "OK: $PKG, $N games, names \"$DEF\" / \"$FA\""
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: chogan-plus-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14

@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.choganhq.choganplus",
+  "appName": "چوگان پلاس",
+  "webDir": "chogan/www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": false,
+    "webContentsDebuggingEnabled": false
+  }
+}

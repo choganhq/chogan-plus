@@ -1,0 +1,117 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Chogan Plus is Chogan's web app and Android shell in a Play-only package.
+// The games, the Java shell and its resources come from the pinned `chogan`
+// submodule, so nothing shared is copied here; this module only overrides
+// the package id, the name and the shortcut targets, and adds Play-only code.
+def repoRoot = rootProject.file('..')
+def choganRoot = new File(repoRoot, 'chogan')
+def choganMain = new File(choganRoot, 'android/app/src/main')
+if (!new File(choganRoot, 'www/games.json').isFile()) {
+    throw new GradleException('chogan submodule is missing: run git submodule update --init')
+}
+
+def capConfig = new groovy.json.JsonSlurper()
+        .parseText(new File(repoRoot, 'capacitor.config.json').getText('UTF-8'))
+def versionProps = new Properties()
+new File(repoRoot, 'version.properties').withInputStream { versionProps.load(it) }
+
+def capacitorAssetsDir = layout.buildDirectory.dir('generated/capacitorAssets').get().asFile
+
+android {
+    // The namespace stays Chogan's so the shared Java classes and R resolve unchanged;
+    // only applicationId makes this a different app.
+    namespace 'io.github.choganhq.chogan'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId capConfig.appId
+        minSdk 24
+        targetSdk 36
+        versionCode versionProps.versionCode.toInteger()
+        versionName versionProps.versionName
+
+        aaptOptions {
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = [new File(choganMain, 'java'), 'src/main/java']
+            res.srcDirs = [new File(choganMain, 'res')]
+            assets.srcDirs += capacitorAssetsDir
+        }
+        // Inside one source set a duplicate resource is an error, so the name and
+        // shortcut overrides sit in the build types' sets, which outrank main.
+        debug.res.srcDirs += 'src/plus/res'
+        release.res.srcDirs += 'src/plus/res'
+    }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv('ANDROID_KEYSTORE_FILE')
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (System.getenv('ANDROID_KEYSTORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+// Replaces `npx cap sync`, as in Chogan: no Node, no npm.
+def pluginsJson = new File(capacitorAssetsDir, 'capacitor.plugins.json')
+
+def syncWebAssets = tasks.register('syncWebAssets', Sync) {
+    from(new File(choganRoot, 'www')) {
+        into 'public'
+    }
+    from(new File(repoRoot, 'capacitor.config.json'))
+    into capacitorAssetsDir
+    outputs.file(pluginsJson)
+    doLast {
+        pluginsJson.setText('[]\n', 'UTF-8')
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn syncWebAssets
+}
+
+dependencies {
+    // Same versions as chogan/android/app/build.gradle.
+    implementation 'com.capacitorjs:core:8.6.0'
+    implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation 'androidx.activity:activity:1.11.0'
+}

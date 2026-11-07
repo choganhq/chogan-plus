@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides Chogan's launcher name; every other string comes from chogan/android. -->
+<resources>
+    <string name="app_name">Chogan Plus</string>
+</resources>

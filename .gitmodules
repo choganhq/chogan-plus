@@ -1,0 +1,3 @@
+[submodule "chogan"]
+	path = chogan
+	url = https://github.com/choganhq/chogan
