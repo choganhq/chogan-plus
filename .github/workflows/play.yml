@@ -1,0 +1,89 @@
+name: Google Play
+
+# Talks to Google Play as the service account in PLAY_SERVICE_ACCOUNT_JSON (#2).
+# check: proves access without changing anything. upload: takes the signed bundle
+# that release.yml attached to a v* release and puts it on a testing track. It never
+# builds: Play gets exactly the file the release records.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check (read only) or upload (a release bundle to a testing track)'
+        required: true
+        default: check
+        type: choice
+        options: [check, upload]
+      tag:
+        description: 'For upload: the release tag, e.g. v0.1.0'
+        required: false
+        default: ''
+        type: string
+      track:
+        description: 'Track for upload'
+        required: true
+        default: internal
+        type: choice
+        options: [internal, alpha]
+      status:
+        description: 'Release status: draft until the app has been published once'
+        required: true
+        default: draft
+        type: choice
+        options: [draft, completed]
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    name: Play ${{ inputs.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.mode == 'upload' && inputs.tag || github.ref }}
+
+      - name: Check access
+        if: inputs.mode == 'check'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: bash tools/play-api.sh check
+
+      # The version code comes from the tagged tree, so a bundle from another
+      # release cannot be sent under this tag's number.
+      - name: Fetch the release bundle
+        if: inputs.mode == 'upload'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag must look like v1.2.3, got '$TAG'"; exit 1; }
+          NAME=$(sed -n 's/^versionName=//p' version.properties)
+          CODE=$(sed -n 's/^versionCode=//p' version.properties)
+          [ "$TAG" = "v$NAME" ] || { echo "Tag $TAG does not match versionName $NAME"; exit 1; }
+          F="chogan-plus-$NAME.aab"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$F" -D "$RUNNER_TEMP"
+          echo "AAB=$RUNNER_TEMP/$F" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+
+      # Play accepts uploads only from the registered upload key
+      - name: Check the bundle is signed with the Chogan Plus key
+        if: inputs.mode == 'upload'
+        run: |
+          set -euo pipefail
+          OUT=$(jarsigner -verify -verbose -certs "$AAB")
+          grep -q "jar verified" <<<"$OUT" || { tail -5 <<<"$OUT"; echo "Bundle is not signed"; exit 1; }
+          grep -q 'Signed by "CN=Chogan Plus' <<<"$OUT" || { echo "Bundle is not signed with the Chogan Plus key"; exit 1; }
+          echo "OK: $(basename "$AAB") signed by the Chogan Plus key, versionCode $VERSION_CODE"
+
+      - name: Upload to Play
+        if: inputs.mode == 'upload'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TRACK: ${{ inputs.track }}
+          STATUS: ${{ inputs.status }}
+        run: bash tools/play-api.sh upload "$AAB" "$TRACK" "$VERSION_CODE" "$STATUS"
