@@ -1,0 +1,102 @@
+name: Release
+
+# A tag v<versionName> builds the signed bundle that goes to Google Play.
+# Chogan Plus is Play-only, so the bundle is attached to a GitHub release as a
+# record of what was uploaded; the Play upload itself waits for the app to
+# exist in Play Console (#1).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: Build signed bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out with the chogan submodule
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # A tag that disagrees with version.properties would publish a bundle
+      # whose version Play then reports differently from the release name.
+      - name: Read version and match it to the tag
+        id: version
+        run: |
+          set -euo pipefail
+          NAME=$(sed -n 's/^versionName=//p' version.properties)
+          CODE=$(sed -n 's/^versionCode=//p' version.properties)
+          [ -n "$NAME" ] && [ -n "$CODE" ] || { echo "version.properties lacks versionName or versionCode"; exit 1; }
+          [ "$GITHUB_REF_NAME" = "v$NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match versionName $NAME"; exit 1; }
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Read Gradle version from the wrapper
+        id: gradleversion
+        run: |
+          set -euo pipefail
+          V=$(sed -n 's|.*/gradle-\([0-9][^-]*\)-bin\.zip.*|\1|p' android/gradle/wrapper/gradle-wrapper.properties)
+          [ -n "$V" ] || { echo "Could not read the Gradle version"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ steps.gradleversion.outputs.version }}
+
+      - name: Restore the upload key from secrets
+        env:
+          PLUS_KEYSTORE_BASE64: ${{ secrets.PLUS_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          [ -n "${PLUS_KEYSTORE_BASE64:-}" ] || { echo "Secret PLUS_KEYSTORE_BASE64 is not set on this repository."; exit 1; }
+          printf '%s' "$PLUS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build release bundle
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PLUS_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.PLUS_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.PLUS_KEY_PASSWORD }}
+        run: gradle --no-daemon bundleRelease
+
+      # Without the key Gradle still writes an unsigned bundle, which Play
+      # refuses; ask the file who signed it instead of trusting the build.
+      - name: Check signature and name the file
+        id: aab
+        run: |
+          set -euo pipefail
+          AAB=$(ls android/app/build/outputs/bundle/release/*.aab | head -n 1)
+          OUT=$(jarsigner -verify -verbose -certs "$AAB")
+          # Here-strings, not echo | grep -q: grep exits at the first match and,
+          # under pipefail, the SIGPIPE to echo failed a correctly signed bundle.
+          grep -q "jar verified" <<<"$OUT" || { tail -5 <<<"$OUT"; echo "Bundle is not signed"; exit 1; }
+          grep -q 'Signed by "CN=Chogan Plus' <<<"$OUT" || { echo "Bundle is not signed with the Chogan Plus key"; exit 1; }
+          F="chogan-plus-${{ steps.version.outputs.name }}.aab"
+          mv "$AAB" "$F"
+          echo "file=$F" >> "$GITHUB_OUTPUT"
+          echo "OK: $F signed by the Chogan Plus key"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.aab.outputs.file }}" \
+            --title "Chogan Plus ${{ steps.version.outputs.name }}" \
+            --notes "Version ${{ steps.version.outputs.name }} (code ${{ steps.version.outputs.code }}). Signed bundle for Google Play."
