@@ -103,7 +103,8 @@ def syncWebAssets = tasks.register('syncWebAssets', Sync) {
     doLast {
         // Chogan has no native plugins; Plus registers its own here, the file
         // Capacitor's PluginManager reads at start (choganhq/chogan-plus#4).
-        pluginsJson.setText('[{"pkg":"chogan-plus-nearby","classpath":"io.github.choganhq.choganplus.NearbyPlugin"}]\n', 'UTF-8')
+        pluginsJson.setText('[{"pkg":"chogan-plus-nearby","classpath":"io.github.choganhq.choganplus.NearbyPlugin"},' +
+            '{"pkg":"chogan-plus-games","classpath":"io.github.choganhq.choganplus.GamesPlugin"}]\n', 'UTF-8')
     }
 }
 
@@ -119,4 +120,7 @@ dependencies {
     // Two phones in one room (#4). Play-only: this is why Nearby lives in this repo and
     // never in chogan, whose F-Droid build must stay free of Play Services.
     implementation 'com.google.android.gms:play-services-nearby:19.5.1'
+    // Play Games sign-in, Saved Games and leaderboards (#3). Pinned: a "+" here would let a
+    // new SDK change the permission set or minSdk between two builds of the same commit.
+    implementation 'com.google.android.gms:play-services-games-v2:22.1.0'
 }

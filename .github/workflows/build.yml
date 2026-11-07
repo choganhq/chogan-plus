@@ -90,7 +90,7 @@ jobs:
       # Two phones (#4): without the plugins.json entry Capacitor never loads the plugin and the
       # games quietly offer no "Two phones" mode; a new library could also slip in a permission
       # (INTERNET above all) that the store listing and the privacy page say we never ask for.
-      - name: Check the Nearby plugin and the permission set
+      - name: Check the native plugins and the permission set
         run: |
           set -euo pipefail
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
@@ -104,6 +104,19 @@ jobs:
             "$DEXDUMP" "$d" | grep -q "Lio/github/choganhq/choganplus/NearbyPlugin;" && FOUND=1
           done
           [ "$FOUND" = 1 ] || { echo "NearbyPlugin is not in the APK's code"; exit 1; }
+          # Play Games (#3): the plugin, its class, and the project id the SDK reads at start;
+          # without APP_ID the SDK fails sign-in on every phone with no error in the page.
+          unzip -p "$APK" assets/capacitor.plugins.json | grep -q '"io.github.choganhq.choganplus.GamesPlugin"' \
+            || { echo "capacitor.plugins.json does not register GamesPlugin"; exit 1; }
+          FOUND=0
+          for d in /tmp/dex/classes*.dex; do
+            "$DEXDUMP" "$d" | grep -q "Lio/github/choganhq/choganplus/GamesPlugin;" && FOUND=1
+          done
+          [ "$FOUND" = 1 ] || { echo "GamesPlugin is not in the APK's code"; exit 1; }
+          "$AAPT" dump xmltree --file AndroidManifest.xml "$APK" | grep -q 'com.google.android.gms.games.APP_ID' \
+            || { echo "The manifest has no Play Games APP_ID"; exit 1; }
+          "$AAPT" dump resources "$APK" | grep -A1 'string/game_services_project_id' | grep -q '"209426542531"' \
+            || { echo "game_services_project_id is not 209426542531"; exit 1; }
           unzip -p "$APK" assets/public/lib/chogan.js | grep -q 'Chogan.link = makeLink' \
             || { echo "The pinned chogan core has no Chogan.link"; exit 1; }
           GOT=$("$AAPT" dump permissions "$APK" | sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" \
@@ -112,7 +125,7 @@ jobs:
             BLUETOOTH_SCAN ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_WIFI_STATE CHANGE_WIFI_STATE \
             ACCESS_NETWORK_STATE NEARBY_WIFI_DEVICES | sed 's/^/android.permission./' | sort | tr '\n' ' ')
           [ "$GOT" = "$WANT" ] || { echo "Permissions changed."; echo " got:  $GOT"; echo " want: $WANT"; exit 1; }
-          echo "OK: NearbyPlugin registered and compiled, Chogan.link present, $(echo $GOT | wc -w) permissions as listed"
+          echo "OK: NearbyPlugin and GamesPlugin registered and compiled, APP_ID set, Chogan.link present, $(echo $GOT | wc -w) permissions as listed"
 
       - name: Upload the APK
         uses: actions/upload-artifact@v7
