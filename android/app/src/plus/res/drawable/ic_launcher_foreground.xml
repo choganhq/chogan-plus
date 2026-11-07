@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chogan's mallet and ball with a gold plus in the empty corner, so the two apps
+     can be told apart on one home screen (#5). Same geometry as Chogan's icon; the
+     plus sits inside the 66dp safe circle that every launcher mask keeps. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M71,32 L52,57"
+        android:strokeColor="#F2F5F7"
+        android:strokeWidth="7"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M52,57 L65,67"
+        android:strokeColor="#F2F5F7"
+        android:strokeWidth="9.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M43,71 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"
+        android:fillColor="#4FC3F7" />
+    <path
+        android:pathData="M38,32 L38,48 M30,40 L46,40"
+        android:strokeColor="#FFC94D"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round" />
+</vector>

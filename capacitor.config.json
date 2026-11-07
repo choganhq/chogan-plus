@@ -8,6 +8,7 @@
   "android": {
     "allowMixedContent": false,
     "captureInput": false,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "appendUserAgent": "ChoganPlus"
   }
 }
