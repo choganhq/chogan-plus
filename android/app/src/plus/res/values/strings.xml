@@ -2,4 +2,6 @@
 <!-- Overrides Chogan's launcher name; every other string comes from chogan/android. -->
 <resources>
     <string name="app_name">Chogan Plus</string>
+    <!-- Play Games Services project id (Play Console, Play Games Services, Configuration), #3 -->
+    <string name="game_services_project_id" translatable="false">209426542531</string>
 </resources>
