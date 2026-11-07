@@ -44,7 +44,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.mode == 'upload' && inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - name: Check access
         if: inputs.mode == 'check'
@@ -52,8 +52,9 @@ jobs:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: bash tools/play-api.sh check
 
-      # The version code comes from the tagged tree, so a bundle from another
-      # release cannot be sent under this tag's number.
+      # The version code comes from the tag's version.properties, so a bundle from another
+      # release cannot be sent under this tag's number. The scripts come from the default
+      # branch: checking out the tag broke the v0.1.0 upload, whose tree had no play-api.sh.
       - name: Fetch the release bundle
         if: inputs.mode == 'upload'
         env:
@@ -62,8 +63,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag must look like v1.2.3, got '$TAG'"; exit 1; }
-          NAME=$(sed -n 's/^versionName=//p' version.properties)
-          CODE=$(sed -n 's/^versionCode=//p' version.properties)
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "No tag $TAG"; exit 1; }
+          PROPS=$(git show "refs/tags/${TAG}:version.properties")
+          NAME=$(sed -n 's/^versionName=//p' <<<"$PROPS")
+          CODE=$(sed -n 's/^versionCode=//p' <<<"$PROPS")
           [ "$TAG" = "v$NAME" ] || { echo "Tag $TAG does not match versionName $NAME"; exit 1; }
           F="chogan-plus-$NAME.aab"
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$F" -D "$RUNNER_TEMP"

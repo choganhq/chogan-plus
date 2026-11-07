@@ -63,12 +63,19 @@ call() {
   local code
   code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X "$method" -H "Authorization: Bearer $TOKEN" "$@" "$API$path") \
     || fail "$method $path: request failed"
-  case "$code" in 2??) cat "$WORK/body" ;; *) fail "$method $path → HTTP $code: $(head -c 500 "$WORK/body")" ;; esac
+  # Only Google's one-line error.message: the raw multi-line body came out as *** in the
+  # Actions log (run 42369539505), hiding why the upload was refused.
+  case "$code" in 2??) cat "$WORK/body" ;; *) fail "$method ${path%%\?*} → HTTP $code: $(python3 -c '
+import json,sys
+raw=open(sys.argv[1]).read()
+try: e=json.loads(raw).get("error",{}); print(e.get("status",""), e.get("message","").replace("\n"," ")[:400])
+except Exception: print(" ".join(raw.split())[:300])' "$WORK/body")" ;; esac
 }
 
 TOKEN=$(token)
 BASE="/androidpublisher/v3/applications/$PKG"
-EDIT=$(call POST "$BASE/edits" -H 'Content-Type: application/json' -d '{}' | json "['id']") || fail "no edit id"
+EDIT=$(call POST "$BASE/edits" -H 'Content-Type: application/json' -d '{}') || exit 1
+EDIT=$(printf '%s' "$EDIT" | json "['id']") || fail "no edit id"
 echo "Edit $EDIT opened for $PKG"
 
 if [ "$mode" = check ]; then
@@ -89,8 +96,11 @@ aab="${2:-}"; track="${3:-}"; vc="${4:-}"; status="${5:-draft}"
 [[ "$vc" =~ ^[0-9]+$ ]] || cannot "versionCode must be a number, got '$vc'"
 [[ "$status" =~ ^(draft|completed)$ ]] || cannot "status must be draft or completed, got '$status'"
 
-got=$(call POST "/upload$BASE/edits/$EDIT/bundles?uploadType=media" \
-  -H 'Content-Type: application/octet-stream' --data-binary "@$aab" | json "['versionCode']")
+# call runs in a subshell here, so its fail only ends the subshell; stop on its status
+# instead of letting json parse an empty body into a traceback
+up=$(call POST "/upload$BASE/edits/$EDIT/bundles?uploadType=media" \
+  -H 'Content-Type: application/octet-stream' --data-binary "@$aab") || exit 1
+got=$(printf '%s' "$up" | json "['versionCode']")
 [ "$got" = "$vc" ] || fail "Play read versionCode $got from the bundle, expected $vc"
 echo "Bundle uploaded, versionCode $got"
 call PUT "$BASE/edits/$EDIT/tracks/$track" -H 'Content-Type: application/json' \
