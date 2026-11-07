@@ -21,6 +21,24 @@ jobs:
         with:
           submodules: true
 
+      # Play refuses a listing over its limits (title 30, short 80, full 4000 characters), and
+      # the API upload would fail only at release time, far from the edit that caused it (#11).
+      - name: Check store listing lengths
+        run: |
+          set -euo pipefail
+          N=0
+          for d in fastlane/metadata/android/*/; do
+            for spec in title.txt:30 short_description.txt:80 full_description.txt:4000; do
+              f="$d${spec%%:*}"; max=${spec##*:}
+              [ -s "$f" ] || { echo "Missing or empty: $f"; exit 1; }
+              len=$(python3 -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read().rstrip("\n")))' "$f")
+              [ "$len" -le "$max" ] || { echo "$f is $len characters, Play allows $max"; exit 1; }
+              N=$((N+1))
+            done
+          done
+          [ "$N" -ge 6 ] || { echo "Only $N listing files checked"; exit 1; }
+          echo "OK: $N listing files within Play's limits"
+
       - name: Set up Java
         uses: actions/setup-java@v6
         with:
