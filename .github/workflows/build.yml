@@ -69,6 +69,33 @@ jobs:
           [ "$SC" = 0 ] || { echo "$SC shortcuts still open Chogan"; exit 1; }
           echo "OK: $PKG, $N games, names \"$DEF\" / \"$FA\""
 
+      # Two phones (#4): without the plugins.json entry Capacitor never loads the plugin and the
+      # games quietly offer no "Two phones" mode; a new library could also slip in a permission
+      # (INTERNET above all) that the store listing and the privacy page say we never ask for.
+      - name: Check the Nearby plugin and the permission set
+        run: |
+          set -euo pipefail
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
+          DEXDUMP=$(ls "$ANDROID_HOME"/build-tools/*/dexdump | sort -V | tail -n 1)
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -n 1)
+          unzip -p "$APK" assets/capacitor.plugins.json | grep -q '"io.github.choganhq.choganplus.NearbyPlugin"' \
+            || { echo "capacitor.plugins.json does not register NearbyPlugin"; exit 1; }
+          rm -rf /tmp/dex && mkdir /tmp/dex && unzip -q -o "$APK" 'classes*.dex' -d /tmp/dex
+          FOUND=0
+          for d in /tmp/dex/classes*.dex; do
+            "$DEXDUMP" "$d" | grep -q "Lio/github/choganhq/choganplus/NearbyPlugin;" && FOUND=1
+          done
+          [ "$FOUND" = 1 ] || { echo "NearbyPlugin is not in the APK's code"; exit 1; }
+          unzip -p "$APK" assets/public/lib/chogan.js | grep -q 'Chogan.link = makeLink' \
+            || { echo "The pinned chogan core has no Chogan.link"; exit 1; }
+          GOT=$("$AAPT" dump permissions "$APK" | sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" \
+            | grep -v 'DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION$' | sort | tr '\n' ' ')
+          WANT=$(printf '%s\n' VIBRATE BLUETOOTH BLUETOOTH_ADMIN BLUETOOTH_ADVERTISE BLUETOOTH_CONNECT \
+            BLUETOOTH_SCAN ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_WIFI_STATE CHANGE_WIFI_STATE \
+            ACCESS_NETWORK_STATE NEARBY_WIFI_DEVICES | sed 's/^/android.permission./' | sort | tr '\n' ' ')
+          [ "$GOT" = "$WANT" ] || { echo "Permissions changed."; echo " got:  $GOT"; echo " want: $WANT"; exit 1; }
+          echo "OK: NearbyPlugin registered and compiled, Chogan.link present, $(echo $GOT | wc -w) permissions as listed"
+
       - name: Upload the APK
         uses: actions/upload-artifact@v7
         with:
