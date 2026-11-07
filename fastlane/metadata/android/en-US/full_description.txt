@@ -1,0 +1,15 @@
+Chogan Plus is Chogan's collection of small, finishable games — more than sixty — with one extra: play against a friend on their own phone, right next to you, with no internet.
+
+Two phones
+Open a two-player game, choose "Two phones", and the phones find each other over Bluetooth and Wi-Fi through Google Play services. Reversi plays this way today; more games follow with updates.
+
+The games
+Chess, Sudoku, Minesweeper, Backgammon, Hokm, Pasur, Mahjong, FreeCell, Spider, Klondike, 8-Ball Pool, Snooker, Air Hockey, Ping Pong, Go, Gomoku, Checkers, Reversi, Ludo, Dominoes, Tower Defence, Block Drop, Water Sort, Nonogram and many more. Each game has a daily challenge, awards and a weekly league.
+
+What stays the same
+* Free, no ads, no in-app purchases.
+* No account and no internet permission. Your progress stays on your phone.
+* Persian, English, Chinese, German, Spanish and Polish.
+* Open source under the MIT licence: github.com/choganhq/chogan-plus
+
+Chogan Plus is a separate app from Chogan and starts with fresh progress. Chogan itself stays on F-Droid and the web as before.
