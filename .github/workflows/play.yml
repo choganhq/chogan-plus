@@ -3,17 +3,19 @@ name: Google Play
 # Talks to Google Play as the service account in PLAY_SERVICE_ACCOUNT_JSON (#2).
 # check: proves access without changing anything. upload: takes the signed bundle
 # that release.yml attached to a v* release and puts it on a testing track. It never
-# builds: Play gets exactly the file the release records.
+# builds: Play gets exactly the file the release records. listing: sends the store
+# text and images from fastlane/metadata/android, so the listing lives in the repo
+# and not only in Play Console (#11).
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check (read only) or upload (a release bundle to a testing track)'
+        description: 'check (read only), upload (a release bundle to a testing track) or listing (store text and images)'
         required: true
         default: check
         type: choice
-        options: [check, upload]
+        options: [check, upload, listing]
       tag:
         description: 'For upload: the release tag, e.g. v0.1.0'
         required: false
@@ -51,6 +53,12 @@ jobs:
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: bash tools/play-api.sh check
+
+      - name: Send the store listing
+        if: inputs.mode == 'listing'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: bash tools/play-api.sh listing fastlane/metadata/android
 
       # The version code comes from the tag's version.properties, so a bundle from another
       # release cannot be sent under this tag's number. The scripts come from the default
