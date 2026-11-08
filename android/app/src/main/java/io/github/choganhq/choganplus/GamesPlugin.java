@@ -2,6 +2,7 @@ package io.github.choganhq.choganplus;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.Context;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -144,7 +145,7 @@ public class GamesPlugin extends Plugin {
     /** {leaderboard, score}: the leaderboard id from Play Console, a whole-number score. */
     @PluginMethod
     public void submitScore(PluginCall call) {
-        String id = call.getString("leaderboard");
+        String id = call.getString("leaderboard", leagueId());
         Long score = call.getLong("score");
         if (id == null || score == null) { call.reject("leaderboard and score are required"); return; }
         PlayGames.getLeaderboardsClient(getActivity()).submitScoreImmediate(id, score).addOnCompleteListener(t -> {
@@ -157,7 +158,7 @@ public class GamesPlugin extends Plugin {
     @PluginMethod
     public void showLeaderboard(PluginCall call) {
         Activity a = getActivity();
-        String id = call.getString("leaderboard");
+        String id = call.getString("leaderboard", leagueId());
         com.google.android.gms.tasks.Task<Intent> t = id == null
             ? PlayGames.getLeaderboardsClient(a).getAllLeaderboardsIntent()
             : PlayGames.getLeaderboardsClient(a).getLeaderboardIntent(id);
@@ -167,5 +168,16 @@ public class GamesPlugin extends Plugin {
             a.startActivityForResult(i.getResult(), 9004);
             call.resolve();
         });
+    }
+
+    // chogan#707: the page sends league points without an id, so www/ never names a Play
+    // resource; the id lives here with the rest of the Play Games config. Looked up by name
+    // so a build without the leaderboard still compiles and simply rejects the submit.
+    private String leagueId() {
+        Context c = getContext();
+        int res = c.getResources().getIdentifier("leaderboard_league", "string", c.getPackageName());
+        if (res == 0) return null;
+        String id = c.getString(res);
+        return id.isEmpty() ? null : id;
     }
 }
