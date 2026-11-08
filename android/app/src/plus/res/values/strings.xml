@@ -4,4 +4,6 @@
     <string name="app_name">Chogan Plus</string>
     <!-- Play Games Services project id (Play Console, Play Games Services, Configuration), #3 -->
     <string name="game_services_project_id" translatable="false">209426542531</string>
+    <!-- Weekly league leaderboard (Play Console, Play Games Services, Leaderboards); GamesPlugin.leagueId() reads it, chogan#707 -->
+    <string name="leaderboard_league" translatable="false">CgkIw9-tlowGEAIQAg</string>
 </resources>
