@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.Context;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -11,7 +12,10 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.games.GamesSignInClient;
+import com.google.android.gms.games.LeaderboardsClient;
 import com.google.android.gms.games.PlayGames;
+import com.google.android.gms.games.leaderboard.LeaderboardScore;
+import com.google.android.gms.games.leaderboard.LeaderboardVariant;
 import com.google.android.gms.games.SnapshotsClient;
 import com.google.android.gms.games.snapshot.Snapshot;
 import com.google.android.gms.games.snapshot.SnapshotMetadataChange;
@@ -168,6 +172,62 @@ public class GamesPlugin extends Plugin {
             a.startActivityForResult(i.getResult(), 9004);
             call.resolve();
         });
+    }
+
+    /**
+     * {max?} → {rows: [{rank, name, score, me}], me: {rank, name, score}|null}: this week's
+     * top of the league leaderboard and the player's own entry, for the table the page draws
+     * itself (#20). The week is Play's, which resets at midnight Pacific time between Saturday
+     * and Sunday, not at the local league's reset.
+     */
+    @PluginMethod
+    public void loadScores(PluginCall call) {
+        Activity a = getActivity();
+        String id = leagueId();
+        if (id == null) { call.reject("no leaderboard"); return; }
+        int max = Math.max(1, Math.min(25, call.getInt("max", 10)));
+        LeaderboardsClient lc = PlayGames.getLeaderboardsClient(a);
+        PlayGames.getPlayersClient(a).getCurrentPlayerId().addOnCompleteListener(p -> {
+            String self = p.isSuccessful() ? p.getResult() : null;
+            lc.loadTopScores(id, LeaderboardVariant.TIME_SPAN_WEEKLY, LeaderboardVariant.COLLECTION_PUBLIC, max)
+              .addOnCompleteListener(t -> {
+                if (!t.isSuccessful() || t.getResult() == null || t.getResult().get() == null) {
+                    call.reject("load failed: " + reason(t.getException()));
+                    return;
+                }
+                LeaderboardsClient.LeaderboardScores ls = t.getResult().get();
+                JSArray rows = new JSArray();
+                try {
+                    for (LeaderboardScore s : ls.getScores()) {
+                        JSObject r = entry(s);
+                        if (r == null) continue;
+                        r.put("me", self != null && s.getScoreHolder() != null && self.equals(s.getScoreHolder().getPlayerId()));
+                        rows.put(r);
+                    }
+                } finally {
+                    // The buffer holds native data until released (LeaderboardScores docs)
+                    ls.release();
+                }
+                JSObject out = new JSObject();
+                out.put("rows", rows);
+                lc.loadCurrentPlayerLeaderboardScore(id, LeaderboardVariant.TIME_SPAN_WEEKLY, LeaderboardVariant.COLLECTION_PUBLIC)
+                  .addOnCompleteListener(m -> {
+                    // No score this week yet is a normal answer, not a failure of the table
+                    JSObject me = m.isSuccessful() && m.getResult() != null ? entry(m.getResult().get()) : null;
+                    out.put("me", me == null ? JSObject.NULL : me);
+                    call.resolve(out);
+                });
+            });
+        });
+    }
+
+    private static JSObject entry(LeaderboardScore s) {
+        if (s == null || s.getRank() < 1) return null;
+        JSObject r = new JSObject();
+        r.put("rank", s.getRank());
+        r.put("name", s.getScoreHolderDisplayName());
+        r.put("score", s.getRawScore());
+        return r;
     }
 
     // chogan#707: the page sends league points without an id, so www/ never names a Play
