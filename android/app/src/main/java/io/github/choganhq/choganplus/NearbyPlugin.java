@@ -1,6 +1,9 @@
 package io.github.choganhq.choganplus;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.os.Build;
 
 import com.getcapacitor.JSObject;
@@ -11,6 +14,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.nearby.Nearby;
 import com.google.android.gms.nearby.connection.AdvertisingOptions;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
@@ -105,6 +109,14 @@ public class NearbyPlugin extends Plugin {
     }
 
     private void begin(PluginCall call) {
+        // chogan#744: Nearby no longer turns Bluetooth on by itself, and its failure then read
+        // like a refused permission. Say "bluetooth" so the page can ask for the right thing.
+        // Wi-Fi is not checked: Nearby connects over Bluetooth alone, Wi-Fi only speeds it up.
+        if (!bluetoothOn()) {
+            emit("error", null, "bluetooth");
+            call.reject("bluetooth");
+            return;
+        }
         running = true;
         look();
         call.resolve();
@@ -123,10 +135,24 @@ public class NearbyPlugin extends Plugin {
         }
     }
 
+    private boolean bluetoothOn() {
+        BluetoothManager bm = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter a = bm == null ? null : bm.getAdapter();
+        // No adapter at all: let Nearby try and report its own code rather than guess
+        return a == null || a.isEnabled();
+    }
+
     private void failed(Exception e) {
         // Already advertising or discovering is the state we wanted, not an error
         String m = String.valueOf(e.getMessage());
-        if (m.contains(String.valueOf(ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING))
+        if (e instanceof ApiException) {
+            int code = ((ApiException) e).getStatusCode();
+            if (code == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING
+                    || code == ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING) return;
+            if (code == ConnectionsStatusCodes.STATUS_BLUETOOTH_ERROR) { emit("error", null, "bluetooth"); return; }
+            // "<code>: <name>": the page shows the code, so a player's report can name the failure
+            m = code + ": " + ConnectionsStatusCodes.getStatusCodeString(code);
+        } else if (m.contains(String.valueOf(ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING))
                 || m.contains(String.valueOf(ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING))) return;
         emit("error", null, m);
     }
