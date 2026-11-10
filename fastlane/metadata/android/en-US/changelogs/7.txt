@@ -1,0 +1,1 @@
+Two-phone games: switching to another app no longer ends the game. When you come back, the phones reconnect by themselves and the board is where you left it.
