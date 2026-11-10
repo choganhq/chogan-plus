@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # Talks to the Google Play Developer API as the service account in
 # PLAY_SERVICE_ACCOUNT_JSON. Copied from choganhq/chogan's tools/play-api.sh, cut to
-# check, upload and listing. No third-party action ever sees the key: the
+# check, upload, notes and listing. No third-party action ever sees the key: the
 # OAuth token comes from a JWT signed here with openssl, and the API is plain curl.
 #
 # Usage:
 #   tools/play-api.sh check
 #       Opens an edit, prints the tracks, deletes the edit. Changes nothing.
-#   tools/play-api.sh upload <file.aab> <track> <versionCode> [status]
+#   tools/play-api.sh upload <file.aab> <track> <versionCode> [status] [metadata dir]
 #       Uploads the bundle, sets <track> to that version code with [status]
 #       (default draft: Play only accepts drafts until the app is first published),
-#       and commits the edit.
+#       and commits the edit. With [metadata dir], the release notes ("What's new")
+#       come from <dir>/<lang>/changelogs/<versionCode>.txt: en-US required, each at
+#       most 500 characters (#25).
+#   tools/play-api.sh notes <track> <versionCode> <metadata dir>
+#       Sets those release notes on the release of <versionCode> already on <track>,
+#       keeping its status. Uploads nothing.
 #   tools/play-api.sh listing <metadata dir>
 #       Sends the store listing from fastlane-style metadata (one folder per Play
 #       language: title.txt, short_description.txt, full_description.txt and
@@ -31,13 +36,35 @@ fail() { echo "play-api: $1" >&2; exit 1; }
 PKG="${PLAY_PACKAGE:-io.github.choganhq.choganplus}"
 API="${PLAY_API:-https://androidpublisher.googleapis.com}"
 mode="${1:-}"
-case "$mode" in check|upload|listing) ;; *) cannot "mode must be check, upload or listing, got '${mode}'" ;; esac
+case "$mode" in check|upload|notes|listing) ;; *) cannot "mode must be check, upload, notes or listing, got '${mode}'" ;; esac
 for t in curl openssl python3; do command -v "$t" >/dev/null 2>&1 || cannot "$t is missing"; done
 [[ "$PKG" =~ ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$ ]] || cannot "invalid package name '$PKG'"
 
 WORK=$(mktemp -d)
 # The private key is written to WORK; it must be gone however the script ends
 trap 'rm -rf "$WORK"' EXIT
+
+# Release notes as a JSON list, built before anything is sent: 0.2.3 went to Play with
+# none, and its "What's new" was empty (#25)
+notes_json() {
+  python3 - "$1" "$2" <<'PY2'
+import json, sys, pathlib
+d, vc = pathlib.Path(sys.argv[1]), sys.argv[2]
+if not d.is_dir(): sys.exit('metadata folder %s missing' % d)
+notes = []
+for f in sorted(d.glob('*/changelogs/%s.txt' % vc)):
+    text = f.read_text(encoding='utf-8').strip()
+    if not text: sys.exit('%s is empty' % f)
+    if len(text) > 500: sys.exit("%s is over Play's 500 characters" % f)
+    notes.append({'language': f.parent.parent.name, 'text': text})
+if not any(n['language'] == 'en-US' for n in notes): sys.exit('no en-US changelog for versionCode %s' % vc)
+print(json.dumps(notes, ensure_ascii=False))
+PY2
+}
+case "$mode" in
+  upload) [ -z "${6:-}" ] || NOTES=$(notes_json "$6" "${4:-}") || cannot "release notes: see above" ;;
+  notes) NOTES=$(notes_json "${4:-}" "${3:-}") || cannot "release notes: see above" ;;
+esac
 
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
@@ -143,6 +170,29 @@ PY
   exit 0
 fi
 
+if [ "$mode" = notes ]; then
+  track="${2:-}"; vc="${3:-}"
+  bail() { call DELETE "$BASE/edits/$EDIT" >/dev/null; cannot "$1"; }
+  [[ "$track" =~ ^[a-z][a-z0-9:_-]*$ ]] || bail "invalid track '$track'"
+  [[ "$vc" =~ ^[0-9]+$ ]] || bail "versionCode must be a number, got '$vc'"
+  cur=$(call GET "$BASE/edits/$EDIT/tracks/$track") || exit 1
+  if ! printf '%s' "$cur" | python3 -c '
+import json,sys
+vc,notes=sys.argv[1],json.loads(sys.argv[2])
+t=json.load(sys.stdin); hit=False
+for r in t.get("releases",[]):
+    if vc in r.get("versionCodes",[]): r["releaseNotes"]=notes; hit=True
+if not hit: sys.exit(1)
+print(json.dumps(t,ensure_ascii=False))' "$vc" "$NOTES" > "$WORK/release.json"; then
+    call DELETE "$BASE/edits/$EDIT" >/dev/null
+    fail "versionCode $vc is not on $track; nothing changed"
+  fi
+  call PUT "$BASE/edits/$EDIT/tracks/$track" -H 'Content-Type: application/json; charset=utf-8' --data-binary "@$WORK/release.json" >/dev/null
+  call POST "$BASE/edits/$EDIT:commit" >/dev/null
+  echo "Committed: release notes on $track versionCode $vc"
+  exit 0
+fi
+
 aab="${2:-}"; track="${3:-}"; vc="${4:-}"; status="${5:-draft}"
 [ -s "$aab" ] || cannot "bundle '$aab' missing or empty"
 [[ "$track" =~ ^[a-z][a-z0-9:_-]*$ ]] || cannot "invalid track '$track'"
@@ -156,7 +206,11 @@ up=$(call POST "/upload$BASE/edits/$EDIT/bundles?uploadType=media" \
 got=$(printf '%s' "$up" | json "['versionCode']")
 [ "$got" = "$vc" ] || fail "Play read versionCode $got from the bundle, expected $vc"
 echo "Bundle uploaded, versionCode $got"
-call PUT "$BASE/edits/$EDIT/tracks/$track" -H 'Content-Type: application/json' \
-  -d "{\"track\":\"$track\",\"releases\":[{\"versionCodes\":[\"$vc\"],\"status\":\"$status\"}]}" >/dev/null
+python3 -c '
+import json,sys
+r={"versionCodes":[sys.argv[2]],"status":sys.argv[3]}
+if sys.argv[4]: r["releaseNotes"]=json.loads(sys.argv[4])
+print(json.dumps({"track":sys.argv[1],"releases":[r]},ensure_ascii=False))' "$track" "$vc" "$status" "${NOTES:-}" > "$WORK/release.json"
+call PUT "$BASE/edits/$EDIT/tracks/$track" -H 'Content-Type: application/json; charset=utf-8' --data-binary "@$WORK/release.json" >/dev/null
 call POST "$BASE/edits/$EDIT:commit" >/dev/null
-echo "Committed: $track → versionCode $vc ($status)"
+echo "Committed: $track → versionCode $vc ($status)${NOTES:+, with release notes}"
