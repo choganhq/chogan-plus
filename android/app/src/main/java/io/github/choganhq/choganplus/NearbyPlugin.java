@@ -48,9 +48,12 @@ import java.nio.charset.StandardCharsets;
     permissions = {
         // Nearby needs different runtime permissions per Android version; only the alias for
         // the running version is requested, so the dialog never asks for something unused.
+        // Location stays on 33+: Nearby 19.5.1 still refused discovery there with 8034
+        // MISSING_PERMISSION_ACCESS_COARSE_LOCATION (#27)
         @Permission(alias = "nearby33", strings = {
             Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.NEARBY_WIFI_DEVICES }),
+            Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.NEARBY_WIFI_DEVICES,
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
         @Permission(alias = "nearby31", strings = {
             Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.ACCESS_FINE_LOCATION }),
@@ -150,6 +153,9 @@ public class NearbyPlugin extends Plugin {
             if (code == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING
                     || code == ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING) return;
             if (code == ConnectionsStatusCodes.STATUS_BLUETOOTH_ERROR) { emit("error", null, "bluetooth"); return; }
+            // 8030-8039 are MISSING_PERMISSION_*: the page's permission message tells the
+            // player what to allow, where a bare "8034" told them nothing (#27)
+            if (code >= 8030 && code <= 8039) { emit("error", null, "permission"); return; }
             // "<code>: <name>": the page shows the code, so a player's report can name the failure
             m = code + ": " + ConnectionsStatusCodes.getStatusCodeString(code);
         } else if (m.contains(String.valueOf(ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING))
