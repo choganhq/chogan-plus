@@ -1,0 +1,1 @@
+Two-phone games: the guest phone on Android 13 and later now asks for location, which the Nearby link needs to find the other phone, instead of failing with error 8034.
