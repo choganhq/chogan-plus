@@ -5,24 +5,26 @@ name: Google Play
 # that release.yml attached to a v* release and puts it on a testing track. It never
 # builds: Play gets exactly the file the release records. listing: sends the store
 # text and images from fastlane/metadata/android, so the listing lives in the repo
-# and not only in Play Console (#11).
+# and not only in Play Console (#11). notes: sets the "What's new" text from
+# fastlane/metadata/android/<lang>/changelogs/<versionCode>.txt on a release already on
+# a track; upload sends the same text with the bundle (#25).
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check (read only), upload (a release bundle to a testing track) or listing (store text and images)'
+        description: 'check (read only), upload (a release bundle to a testing track), notes (What''s new for a release already on a track) or listing (store text and images)'
         required: true
         default: check
         type: choice
-        options: [check, upload, listing]
+        options: [check, upload, notes, listing]
       tag:
-        description: 'For upload: the release tag, e.g. v0.1.0'
+        description: 'For upload and notes: the release tag, e.g. v0.1.0'
         required: false
         default: ''
         type: string
       track:
-        description: 'Track for upload'
+        description: 'Track for upload and notes'
         required: true
         default: internal
         type: choice
@@ -63,8 +65,8 @@ jobs:
       # The version code comes from the tag's version.properties, so a bundle from another
       # release cannot be sent under this tag's number. The scripts come from the default
       # branch: checking out the tag broke the v0.1.0 upload, whose tree had no play-api.sh.
-      - name: Fetch the release bundle
-        if: inputs.mode == 'upload'
+      - name: Read the version code from the tag
+        if: inputs.mode == 'upload' || inputs.mode == 'notes'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -76,10 +78,19 @@ jobs:
           NAME=$(sed -n 's/^versionName=//p' <<<"$PROPS")
           CODE=$(sed -n 's/^versionCode=//p' <<<"$PROPS")
           [ "$TAG" = "v$NAME" ] || { echo "Tag $TAG does not match versionName $NAME"; exit 1; }
-          F="chogan-plus-$NAME.aab"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Fetch the release bundle
+        if: inputs.mode == 'upload'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          F="chogan-plus-$VERSION_NAME.aab"
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$F" -D "$RUNNER_TEMP"
           echo "AAB=$RUNNER_TEMP/$F" >> "$GITHUB_ENV"
-          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
 
       # Play accepts uploads only from the registered upload key
       - name: Check the bundle is signed with the Chogan Plus key
@@ -97,4 +108,11 @@ jobs:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           TRACK: ${{ inputs.track }}
           STATUS: ${{ inputs.status }}
-        run: bash tools/play-api.sh upload "$AAB" "$TRACK" "$VERSION_CODE" "$STATUS"
+        run: bash tools/play-api.sh upload "$AAB" "$TRACK" "$VERSION_CODE" "$STATUS" fastlane/metadata/android
+
+      - name: Set the release notes
+        if: inputs.mode == 'notes'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TRACK: ${{ inputs.track }}
+        run: bash tools/play-api.sh notes "$TRACK" "$VERSION_CODE" fastlane/metadata/android

@@ -39,6 +39,11 @@ jobs:
           [ "$N" -ge 6 ] || { echo "Only $N listing files checked"; exit 1; }
           echo "OK: $N listing files within Play's limits"
 
+      # The release notes Play shows as "What's new" come from play-api.sh; it once sent
+      # none and 0.2.3's page was empty (#25). Runs it against a fake API.
+      - name: Check Play uploads carry release notes
+        run: bash tools/play-api-test.sh
+
       - name: Set up Java
         uses: actions/setup-java@v6
         with:

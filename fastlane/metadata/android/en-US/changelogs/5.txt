@@ -1,0 +1,1 @@
+Two-phone games: clearer messages when the link fails, telling apart a missing Nearby devices permission, Bluetooth turned off and other errors (with their code).
