@@ -1,0 +1,1 @@
+Tanks and Battleship now have a two-phone mode: play against a friend on a nearby phone, with no internet.
