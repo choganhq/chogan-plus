@@ -1,0 +1,1 @@
+Fixed: Battleship no longer jumps when the status line wraps to two lines, and Tanks shots show on both phones. Plus new games and languages.
