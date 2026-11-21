@@ -15,7 +15,8 @@
 #       most 500 characters (#25).
 #   tools/play-api.sh notes <track> <versionCode> <metadata dir>
 #       Sets those release notes on the release of <versionCode> already on <track>,
-#       keeping its status. Uploads nothing.
+#       keeping its status, or setting it to completed when SET_STATUS=completed (a draft
+#       reaches no tester and a used version code cannot be uploaded again). Uploads nothing.
 #   tools/play-api.sh listing <metadata dir>
 #       Sends the store listing from fastlane-style metadata (one folder per Play
 #       language: title.txt, short_description.txt, full_description.txt and
@@ -178,18 +179,20 @@ if [ "$mode" = notes ]; then
   cur=$(call GET "$BASE/edits/$EDIT/tracks/$track") || exit 1
   if ! printf '%s' "$cur" | python3 -c '
 import json,sys
-vc,notes=sys.argv[1],json.loads(sys.argv[2])
+vc,notes,st=sys.argv[1],json.loads(sys.argv[2]),sys.argv[3]
 t=json.load(sys.stdin); hit=False
 for r in t.get("releases",[]):
-    if vc in r.get("versionCodes",[]): r["releaseNotes"]=notes; hit=True
+    if vc in r.get("versionCodes",[]):
+        r["releaseNotes"]=notes; hit=True
+        if st: r["status"]=st
 if not hit: sys.exit(1)
-print(json.dumps(t,ensure_ascii=False))' "$vc" "$NOTES" > "$WORK/release.json"; then
+print(json.dumps(t,ensure_ascii=False))' "$vc" "$NOTES" "${SET_STATUS:-}" > "$WORK/release.json"; then
     call DELETE "$BASE/edits/$EDIT" >/dev/null
     fail "versionCode $vc is not on $track; nothing changed"
   fi
   call PUT "$BASE/edits/$EDIT/tracks/$track" -H 'Content-Type: application/json; charset=utf-8' --data-binary "@$WORK/release.json" >/dev/null
   call POST "$BASE/edits/$EDIT:commit" >/dev/null
-  echo "Committed: release notes on $track versionCode $vc"
+  echo "Committed: release notes${SET_STATUS:+ and status $SET_STATUS} on $track versionCode $vc"
   exit 0
 fi
 

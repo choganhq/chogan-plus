@@ -30,7 +30,7 @@ on:
         type: choice
         options: [internal, alpha]
       status:
-        description: 'Release status: draft until the app has been published once'
+        description: 'Release status for upload; for notes, completed also rolls out a release that is still a draft'
         required: true
         default: draft
         type: choice
@@ -115,4 +115,7 @@ jobs:
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           TRACK: ${{ inputs.track }}
+          # A draft on a track reaches no tester; upload cannot redo a used version code,
+          # so notes with status completed is how 0.2.8 was rolled out.
+          SET_STATUS: ${{ inputs.status == 'completed' && 'completed' || '' }}
         run: bash tools/play-api.sh notes "$TRACK" "$VERSION_CODE" fastlane/metadata/android
