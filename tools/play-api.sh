@@ -186,6 +186,8 @@ for r in t.get("releases",[]):
         r["releaseNotes"]=notes; hit=True
         if st: r["status"]=st
 if not hit: sys.exit(1)
+# Play allows one completed release per track: the new one replaces the old.
+if st == "completed": t["releases"]=[r for r in t["releases"] if vc in r.get("versionCodes",[])]
 print(json.dumps(t,ensure_ascii=False))' "$vc" "$NOTES" "${SET_STATUS:-}" > "$WORK/release.json"; then
     call DELETE "$BASE/edits/$EDIT" >/dev/null
     fail "versionCode $vc is not on $track; nothing changed"
