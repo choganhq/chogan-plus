@@ -1,0 +1,1 @@
+Fixed: Tanks shells now fly across the screen on the other phone too, even with animations turned off. Plus new games and languages (Maze, Speed, Piano, Ball Rain and more).
