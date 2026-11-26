@@ -5,7 +5,7 @@ plugins {
 // Chogan Plus is Chogan's web app and Android shell in a Play-only package.
 // The games, the Java shell and its resources come from the pinned `chogan`
 // submodule, so nothing shared is copied here; this module only overrides
-// the package id, the name and the shortcut targets, and adds Play-only code.
+// the package id and the name, and adds Play-only code.
 def repoRoot = rootProject.file('..')
 def choganRoot = new File(repoRoot, 'chogan')
 def choganMain = new File(choganRoot, 'android/app/src/main')
@@ -44,8 +44,8 @@ android {
             res.srcDirs = [new File(choganMain, 'res')]
             assets.srcDirs += capacitorAssetsDir
         }
-        // Inside one source set a duplicate resource is an error, so the name and
-        // shortcut overrides sit in the build types' sets, which outrank main.
+        // Inside one source set a duplicate resource is an error, so the name
+        // override sits in the build types' sets, which outrank main.
         debug.res.srcDirs += 'src/plus/res'
         release.res.srcDirs += 'src/plus/res'
     }

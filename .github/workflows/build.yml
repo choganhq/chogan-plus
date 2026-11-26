@@ -88,8 +88,15 @@ jobs:
           [ "$PKG" = "io.github.choganhq.choganplus.debug" ] || { echo "Package is $PKG"; exit 1; }
           [ "$DEF" = "Chogan Plus" ] || { echo "Default name is \"$DEF\""; exit 1; }
           [ "$FA" = "چوگان پلاس" ] || { echo "Persian name is \"$FA\""; exit 1; }
-          SC=$("$AAPT" dump xmltree --file res/xml/shortcuts.xml "$APK" | grep -c 'targetPackage.*"io.github.choganhq.chogan"' || true)
-          [ "$SC" = 0 ] || { echo "$SC shortcuts still open Chogan"; exit 1; }
+          # Shortcuts are set at runtime by Chogan's ShortcutsBridge from the pinned games
+          # (choganhq/chogan#1150); a static list left in the manifest would sit in front of them.
+          MANIFEST=$("$AAPT" dump xmltree --file AndroidManifest.xml "$APK")
+          grep -q 'MainActivity' <<<"$MANIFEST" || { echo "Could not read the manifest"; exit 1; }
+          if grep -q 'android.app.shortcuts' <<<"$MANIFEST"; then echo "Static shortcuts are still declared"; exit 1; fi
+          DEXDUMP=$(ls "$ANDROID_HOME"/build-tools/*/dexdump | sort -V | tail -n 1)
+          rm -rf /tmp/sc && mkdir /tmp/sc && unzip -q "$APK" 'classes*.dex' -d /tmp/sc
+          "$DEXDUMP" /tmp/sc/classes*.dex > /tmp/sc/dump.txt
+          grep -q "Class descriptor.*Lio/github/choganhq/chogan/ShortcutsBridge;" /tmp/sc/dump.txt || { echo "ShortcutsBridge is not in the APK"; exit 1; }
           echo "OK: $PKG, $N games, names \"$DEF\" / \"$FA\""
 
       # Two phones (#4): without the plugins.json entry Capacitor never loads the plugin and the
